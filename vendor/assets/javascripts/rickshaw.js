@@ -2097,10 +2097,16 @@ Rickshaw.Graph.HoverDetail = Rickshaw.Class.create({
 			if (dataIndex < 0) dataIndex = 0;
 			var value = data[dataIndex];
 
+            var vertical = graph.renderer.name == "marker" || series.renderer == "marker";
+
 			var distance = Math.sqrt(
 				Math.pow(Math.abs(graph.x(value.x) - eventX), 2) +
-				Math.pow(Math.abs(graph.y(value.y + value.y0) - eventY), 2)
+				(vertical ? 0 : Math.pow(Math.abs(graph.y(value.y + value.y0) - eventY), 2))
 			);
+
+            if (vertical) {
+              distance *= 2;
+            }
 
 			var xFormatter = series.xFormatter || this.xFormatter;
 			var yFormatter = series.yFormatter || this.yFormatter;
@@ -2112,7 +2118,8 @@ Rickshaw.Graph.HoverDetail = Rickshaw.Class.create({
 				value: value,
 				distance: distance,
 				order: j,
-				name: series.name
+				name: series.name,
+                vertical: vertical
 			};
 
 			if (!nearestPoint || distance < nearestPoint.distance) {
@@ -2191,7 +2198,13 @@ Rickshaw.Graph.HoverDetail = Rickshaw.Class.create({
 		var actualY = series.scale ? series.scale.invert(point.value.y) : point.value.y;
 
 		item.innerHTML = this.formatter(series, point.value.x, actualY, formattedXValue, formattedYValue, point);
-		item.style.top = this.graph.y(point.value.y0 + point.value.y) + 'px';
+        var vertical = graph.renderer.name == "marker" || series.renderer == "marker";
+        if (vertical) {
+          item.style.top = args.mouseY + 'px';
+        }
+        else {
+          item.style.top = this.graph.y(point.value.y0 + point.value.y) + 'px';
+        }
 
 		this.element.appendChild(item);
 
@@ -2397,6 +2410,8 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 		var element = this.element = args.element;
 		var graph = this.graph = args.graph;
 
+		this.slideCallbacks = [];
+
 		this.build();
 
 		graph.onUpdate( function() { this.update() }.bind(this) );
@@ -2408,6 +2423,7 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 		var graph = this.graph;
 
 		var domain = graph.dataDomain();
+		var self = this;
 
 		$( function() {
 			$(element).slider( {
@@ -2432,9 +2448,14 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 					if (domain[0] == ui.values[0]) {
 						graph.window.xMin = undefined;
 					}
+
 					if (domain[1] == ui.values[1]) {
 						graph.window.xMax = undefined;
 					}
+
+					self.slideCallbacks.forEach(function(callback) {
+						callback(graph, graph.window.xMin, graph.window.xMax);
+					});
 				}
 			} );
 		} );
@@ -2463,6 +2484,10 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 		}
 
 		$(element).slider('option', 'values', values);
+	},
+
+	onSlide: function(callback) {
+		this.slideCallbacks.push(callback);
 	}
 });
 
@@ -2492,6 +2517,8 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 		this.defaults.gripperColor = d3.rgb(this.defaults.frameColor).darker().toString(); 
 
 		this.configureCallbacks = [];
+		this.slideCallbacks = [];
+
 		this.previews = [];
 
 		args.width = args.width || this.graphs[0].width || this.defaults.width;
@@ -2499,6 +2526,10 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 
 		this.configure(args);
 		this.render();
+	},
+
+	onSlide: function(callback) {
+		this.slideCallbacks.push(callback);
 	},
 
 	onConfigure: function(callback) {
@@ -2551,12 +2582,14 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 
 			var graphArgs = Rickshaw.extend({}, parent.config);
 			var height = self.previewHeight / self.graphs.length;
+			var renderer = parent.renderer.name;
 
 			Rickshaw.extend(graphArgs, {
 				element: this.appendChild(document.createElement("div")),
 				height: height,
 				width: self.previewWidth,
-				series: parent.series
+				series: parent.series,
+				renderer: renderer
 			});
 
 			var graph = new Rickshaw.Graph(graphArgs);
@@ -2823,6 +2856,10 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 					domainScale(frameAfterDrag[1])
 				];
 
+				self.slideCallbacks.forEach(function(callback) {
+					callback(graph, windowAfterDrag[0], windowAfterDrag[1]);
+				});
+
 				if (frameAfterDrag[0] === 0) {
 					windowAfterDrag[0] = undefined;
 				}
@@ -2831,7 +2868,7 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 				}
 				graph.window.xMin = windowAfterDrag[0];
 				graph.window.xMax = windowAfterDrag[1];
-				
+
 				graph.update();
 			});
 		}
@@ -3413,6 +3450,63 @@ Rickshaw.Graph.Renderer.ScatterPlot = Rickshaw.Class.create( Rickshaw.Graph.Rend
 		}, this );
 	}
 } );
+Rickshaw.namespace('Rickshaw.Graph.Renderer.Marker');
+
+Rickshaw.Graph.Renderer.Marker = Rickshaw.Class.create( Rickshaw.Graph.Renderer, {
+
+	name: 'marker',
+
+	defaults: function($super) {
+
+		return Rickshaw.extend( $super(), {
+			unstack: true,
+			fill: true,
+			stroke: false,
+			padding:{ top: 0.01, right: 0.01, bottom: 0.01, left: 0.01 },
+            strokeDashArray: "1, 0",
+			strokeWidth: 2
+		} );
+	},
+
+	initialize: function($super, args) {
+		$super(args);
+	},
+
+	render: function(args) {
+
+		args = args || {};
+
+		var graph = this.graph;
+
+		var series = args.series || graph.series;
+		var vis = args.vis || graph.vis;
+
+		var strokeWidth = this.strokeWidth;
+		var strokeDashArray = this.strokeDashArray;
+
+		vis.selectAll('*').remove();
+
+		series.forEach( function(series) {
+
+			if (series.disabled) return;
+
+			var nodes = vis.selectAll("path")
+				.data(series.stack.filter( function(d) { return d.y !== null } ))
+				.enter().append("svg:line")
+					.attr("x1", function(d) { return graph.x(d.x) })
+					.attr("y1", 0)
+					.attr("x2", function(d) { return graph.x(d.x) })
+					.attr("y2", graph.height)
+                    .style("stroke", series.color)
+                    .style("stroke-width", function(d) {return ("strokeWidth" in d) ? d.strokeWidth : strokeWidth})
+                    .style("stroke-dasharray", function(d) {return ("strokeDashArray" in d) ? d.strokeDashArray : strokeDashArray});
+			if (series.className) {
+				nodes.classed(series.className, true);
+			}
+			
+		}, this );
+	}
+} );
 Rickshaw.namespace('Rickshaw.Graph.Renderer.Multi');
 
 Rickshaw.Graph.Renderer.Multi = Rickshaw.Class.create( Rickshaw.Graph.Renderer, {
@@ -3456,8 +3550,14 @@ Rickshaw.Graph.Renderer.Multi = Rickshaw.Class.create( Rickshaw.Graph.Renderer, 
 				.map( function(s) { return s.stack });
 
 			if (!data.length) return;
-
-			var domain = $super(data);
+			
+			var domain = null;
+			if (group.renderer && group.renderer.domain) {
+				domain = group.renderer.domain(data);
+			}
+			else {
+				domain = $super(data);
+			}
 			domains.push(domain);
 		});
 
