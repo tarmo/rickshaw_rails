@@ -3481,8 +3481,8 @@ Rickshaw.Graph.Renderer.Marker = Rickshaw.Class.create( Rickshaw.Graph.Renderer,
 		var series = args.series || graph.series;
 		var vis = args.vis || graph.vis;
 
-		var strokeWidth = this.strokeWidth;
-		var strokeDashArray = this.strokeDashArray;
+		var strokeWidth = series.strokeWidth || this.strokeWidth;
+		var strokeDashArray = series.strokeDashArray || this.strokeDashArray;
 
 		vis.selectAll('*').remove();
 
