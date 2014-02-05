@@ -3590,7 +3590,7 @@ Rickshaw.Graph.Renderer.Multi = Rickshaw.Class.create( Rickshaw.Graph.Renderer, 
 
 				var config = {};
 
-				var defaults = [ this.defaults(), renderer.defaults(), this.config, this.graph ];
+				var defaults = [ this.defaults(), renderer.defaults(), this.config, this.graph, series.renderer_config || {} ];
 				defaults.forEach(function(d) { Rickshaw.extend(config, d) });
 
 				renderer.configure(config);
