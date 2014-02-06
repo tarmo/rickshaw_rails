@@ -533,7 +533,8 @@ Rickshaw.Graph = function(args) {
 				var seriesData = data[index];
 				if(seriesData) {
 					seriesData.forEach( function(d) {
-						d.y = series.scale(d.y);
+            if (d.y !== null && d.y != undefined)
+              d.y = series.scale(d.y);
 					} );
 				}
 			}
